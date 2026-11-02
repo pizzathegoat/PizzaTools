@@ -1,0 +1,3 @@
+Steam icon: Simple Icons, https://github.com/simple-icons/simple-icons/blob/develop/icons/steam.svg
+Icon license: CC0 1.0 (https://creativecommons.org/publicdomain/zero/1.0/)
+The Steam name and logo are trademarks of Valve Corporation.
