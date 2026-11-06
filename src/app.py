@@ -32,6 +32,7 @@ from . import Game_remover
 from . import manifest_utils
 from . import file_utils
 from .discord_rpc import DiscordRPC
+from .theme_color_picker import ThemeColorPicker
 from . import updater
 
 FONT = "Arial"
@@ -433,36 +434,37 @@ class LuaUploader(TkinterDnD.Tk):
         self.text_menu.set(self.current_text_color)
 
         self.custom_colors_label = ctk.CTkLabel(self.settings_categories['Design'], text="Custom Theme Colors", font=(FONT, 13, "bold"))
-        self.custom_colors_label.pack(anchor="w", padx=25, pady=(15, 10))
+        self.custom_colors_label.pack(anchor="w", padx=25, pady=(15, 2))
+        ctk.CTkLabel(self.settings_categories['Design'], text="Select a color to edit it.", font=(FONT, 11),
+                     text_color="#B8C0CC").pack(anchor="w", padx=25, pady=(0, 8))
 
-        self.color_inputs = {}
-        color_keys = ["bg", "card", "accent", "btn", "btn_hover"]
-        color_labels = ["Background", "Card", "Accent", "Button", "Button Hover"]
+        self.color_buttons = {}
+        self.theme_color_labels = {
+            "bg": "Background", "card": "Card", "accent": "Accent",
+            "btn": "Button", "btn_hover": "Button Hover",
+        }
 
-        for key, label in zip(color_keys, color_labels):
+        for key, label in self.theme_color_labels.items():
             color_frame = ctk.CTkFrame(self.settings_categories['Design'], fg_color="transparent")
-            color_frame.pack(fill="x", padx=25, pady=(0, 10))
+            color_frame.pack(fill="x", padx=25, pady=(0, 6))
 
             color_label = ctk.CTkLabel(color_frame, text=label, font=(FONT, 11))
-            color_label.pack(side="left", padx=(0, 10), anchor="w", pady=(2, 0))
+            color_label.pack(side="left")
 
-            color_entry = ctk.CTkEntry(color_frame, font=(FONT, 10), placeholder_text="#RRGGBB",
-                                      corner_radius=SMALL_CORNER, height=28, width=120)
-            color_entry.pack(side="left", padx=(0, 8))
-
-            custom_colors = self.settings.get("custom_colors", {})
-            if custom_colors.get(key):
-                color_entry.insert(0, custom_colors[key])
-
-            self.color_inputs[key] = color_entry
-
-        self.apply_colors_btn = ctk.CTkButton(self.settings_categories['Design'], text="Apply Custom Colors",
-                                              font=(FONT, 12, "bold"), command=self.apply_custom_colors)
-        self.apply_colors_btn.pack(anchor="w", padx=25, pady=(10, 15))
+            button = ctk.CTkButton(color_frame, text="", font=(FONT, 11, "bold"), width=102, height=28,
+                                   corner_radius=SMALL_CORNER, border_width=1,
+                                   command=lambda key=key: self.edit_theme_color(key))
+            button.pack(side="right")
+            tk.Frame.configure(button, takefocus=True)
+            tk.Frame.bind(button, "<Return>", lambda event, key=key: self.edit_theme_color(key))
+            tk.Frame.bind(button, "<space>", lambda event, key=key: self.edit_theme_color(key))
+            tk.Frame.bind(button, "<FocusIn>", lambda event, button=button: button.configure(border_color="#91B9FF"))
+            tk.Frame.bind(button, "<FocusOut>", lambda event, button=button: button.configure(border_color="#758195"))
+            self.color_buttons[key] = button
 
         self.reset_colors_btn = ctk.CTkButton(self.settings_categories['Design'], text="Reset to Default",
                                               font=(FONT, 11, "bold"), command=self.reset_custom_colors)
-        self.reset_colors_btn.pack(anchor="w", padx=25, pady=(0, 20))
+        self.reset_colors_btn.pack(anchor="w", padx=25, pady=(8, 20))
 
         self.path_label = ctk.CTkLabel(self.settings_categories['Files'], text="Save Folder", font=(FONT, 13, "bold"))
         self.path_label.pack(anchor="w", padx=25, pady=(15, 5))
@@ -879,51 +881,23 @@ class LuaUploader(TkinterDnD.Tk):
         self.settings["delete_rar_after_patch"] = enabled
         self.save_config()
 
-    def apply_custom_colors(self):
-        custom_colors = {}
-        valid = True
-
-        for key, entry in self.color_inputs.items():
-            hex_color = entry.get().strip()
-
-            if not hex_color:
-                custom_colors[key] = None
-                continue
-
-            if not hex_color.startswith("#"):
-                hex_color = "#" + hex_color
-
-            if len(hex_color) != 7:
-                self.trigger_status_message(f"Invalid format for {key}. Use #RRGGBB", "Invalid")
-                valid = False
-                break
-
-            try:
-                int(hex_color[1:], 16)
-                custom_colors[key] = hex_color
-            except ValueError:
-                self.trigger_status_message(f"Invalid hex color for {key}", "Invalid")
-                valid = False
-                break
-
-        if valid:
-            if not self.settings.get("custom_colors"):
-                self.settings["custom_colors"] = {}
-            self.settings["custom_colors"].update(custom_colors)
-            self.save_config()
+    def edit_theme_color(self, key):
+        def finish(color):
+            if color is not None:
+                colors = dict(self.settings.get("custom_colors") or {})
+                colors[key] = color
+                self.settings["custom_colors"] = colors
+                self.save_config()
             self.apply_theme()
-            self.trigger_status_message("Custom colors applied successfully", "Applied")
+            tk.Frame.focus_set(self.color_buttons[key])
+
+        ThemeColorPicker(
+            self, self.theme_color_labels[key], self.active_theme_colors[key],
+            preview=lambda color: self.apply_theme(preview_color=(key, color)), finish=finish,
+        )
 
     def reset_custom_colors(self):
-        self.settings["custom_colors"] = {
-            "bg": None,
-            "card": None,
-            "accent": None,
-            "btn": None,
-            "btn_hover": None
-        }
-        for entry in self.color_inputs.values():
-            entry.delete(0, 'end')
+        self.settings["custom_colors"] = dict.fromkeys(self.theme_color_labels)
         self.save_config()
         self.apply_theme()
         self.trigger_status_message("Colors reset to default", "Reset")
@@ -1133,7 +1107,7 @@ class LuaUploader(TkinterDnD.Tk):
         else:
             self.trigger_status_message("Failed to delete the file.", "Error")
 
-    def apply_theme(self, theme_name=None):
+    def apply_theme(self, theme_name=None, *, preview_color=None):
         if theme_name:
             self.current_theme = theme_name
         t = config.THEMES.get(self.current_theme, config.THEMES["Dark"]).copy()
@@ -1150,6 +1124,9 @@ class LuaUploader(TkinterDnD.Tk):
             t["btn"] = custom_colors["btn"]
         if custom_colors.get("btn_hover"):
             t["btn_hover"] = custom_colors["btn_hover"]
+        if preview_color is not None:
+            key, color = preview_color
+            t[key] = color
 
         self.active_theme_colors = t.copy()
         try:
@@ -1191,11 +1168,15 @@ class LuaUploader(TkinterDnD.Tk):
         except Exception:
             pass
 
-        try:
-            for entry in self.color_inputs.values():
-                entry.configure(text_color=txt_col, fg_color=t["bg"], border_color=t["accent"])
-        except Exception:
-            pass
+        for key, button in self.color_buttons.items():
+            color = t[key]
+            rgb = [channel / 255 for channel in _hex_to_rgb(color)]
+            linear = [channel / 12.92 if channel <= 0.04045 else ((channel + 0.055) / 1.055) ** 2.4
+                      for channel in rgb]
+            luminance = sum(channel * weight for channel, weight in zip(linear, (0.2126, 0.7152, 0.0722)))
+            foreground = "#000000" if luminance > 0.179 else "#FFFFFF"
+            button.configure(text=color.upper(), fg_color=color, hover_color=color, text_color=foreground,
+                             border_color="#758195")
 
         try:
             self.autostart_switch.configure(text_color=txt_col, progress_color=t["btn"])
@@ -1217,7 +1198,6 @@ class LuaUploader(TkinterDnD.Tk):
                 image=self._get_ui_icon("refresh-cw", txt_col, 14), compound="left"
             )
             self.path_btn.configure(fg_color=t["btn"], hover_color=t["btn_hover"], text_color=txt_col)
-            self.apply_colors_btn.configure(fg_color=t["btn"], hover_color=t["btn_hover"], text_color=txt_col)
             self.reset_colors_btn.configure(fg_color=t["btn"], hover_color=t["btn_hover"], text_color=txt_col)
             self.remove_game_btn.configure(fg_color=t["btn"], hover_color=t["btn_hover"], text_color=txt_col)
             self.shortcut_btn.configure(fg_color=t["btn"], hover_color=t["btn_hover"], text_color=txt_col)
@@ -1258,10 +1238,11 @@ class LuaUploader(TkinterDnD.Tk):
         except Exception:
             pass
 
-        try:
-            self._rebuild_mini_glow()
-        except Exception:
-            pass
+        if preview_color is None:
+            try:
+                self._rebuild_mini_glow()
+            except Exception:
+                pass
 
 
     def _build_mini_logo_image(self):
@@ -1541,9 +1522,11 @@ class LuaUploader(TkinterDnD.Tk):
         self._selected_settings_category = category
         if category == "Steam" and self.current_view == "settings":
             self.refresh_steam_action_button()
-        for page in self.settings_categories.values():
-            page.pack_forget()
-        self.settings_categories[category].pack(fill="both", expand=True, padx=8, pady=(0, 8))
+        selected_page = self.settings_categories[category]
+        if selected_page.winfo_manager() != "pack":
+            for page in self.settings_categories.values():
+                page.pack_forget()
+            selected_page.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
         colors = getattr(self, "active_theme_colors", config.THEMES.get(self.current_theme, config.THEMES["Dark"]))
         text_color = config.TEXT_COLORS.get(self.current_text_color, "#ffffff")

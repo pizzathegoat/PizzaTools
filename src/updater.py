@@ -171,7 +171,7 @@ class UpdateDialog(ctk.CTkToplevel):
         header.pack(fill="x", padx=12, pady=(12, 0))
         header.bind("<ButtonPress-1>", self._start_move)
         header.bind("<B1-Motion>",     self._do_move)
-        ctk.CTkLabel(header, text="🍕  Update Available!",
+        ctk.CTkLabel(header, text="Update Available!",
                      font=(FONT, 15, "bold"), text_color="#ffffff").pack(pady=10)
 
         info = ctk.CTkFrame(self._card, fg_color="transparent")

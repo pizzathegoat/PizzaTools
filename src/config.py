@@ -23,7 +23,7 @@ DISCORD_LINK = "https://discord.gg/aWGNxsf6Dd"
 REG_APP_NAME = "PizzaTools"
 DISCORD_RPC_CLIENT_ID = "1522551537661120593"
 
-APP_VERSION         = "1.0.0"
+APP_VERSION         = "1.0.2"
 GITHUB_LINK         = "https://github.com/pizzathegoat/PizzaTools"
 GITHUB_VERSION_URL  = "https://raw.githubusercontent.com/pizzathegoat/PizzaTools/main/version.json"
 GITHUB_RELEASES_URL = "https://github.com/pizzathegoat/PizzaTools/releases/latest"
