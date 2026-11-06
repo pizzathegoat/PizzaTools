@@ -6,6 +6,7 @@ import tempfile
 import zipfile
 import subprocess
 import urllib.request
+from urllib.parse import urlparse
 
 import customtkinter as ctk
 
@@ -27,6 +28,42 @@ def _fetch_remote_info(url: str, timeout: int = 6) -> dict | None:
             return json.loads(resp.read().decode())
     except Exception:
         return None
+
+
+def _resolve_download_url(download_url: str, timeout: int = 10) -> str:
+    download_url = download_url.strip() if isinstance(download_url, str) else ""
+    if download_url and urlparse(download_url).path.lower().endswith(".zip"):
+        return download_url
+
+    repository = urlparse(config.GITHUB_LINK)
+    owner, _, name = repository.path.strip("/").partition("/")
+    if repository.netloc.lower() != "github.com" or not owner or not name:
+        return ""
+
+    api_url = f"https://api.github.com/repos/{owner}/{name}/releases/latest"
+    request = urllib.request.Request(
+        api_url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "PizzaTools-Updater",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
+            release = json.loads(resp.read().decode("utf-8"))
+        assets = release.get("assets", [])
+        preferred = next(
+            (asset for asset in assets if asset.get("name", "").lower() == "pizza_tools.zip"),
+            None,
+        )
+        if preferred is None:
+            preferred = next(
+                (asset for asset in assets if asset.get("name", "").lower().endswith(".zip")),
+                None,
+            )
+        return preferred.get("browser_download_url", "") if preferred else ""
+    except Exception:
+        return ""
 
 
 def _download_file(url: str, dest_path: str, progress_cb=None):
@@ -268,6 +305,7 @@ def check_for_update(app, theme: dict, text_color: str, silent: bool = True):
             return
 
         if _parse_version(remote_version) > _parse_version(config.APP_VERSION):
+            download_url = _resolve_download_url(download_url)
             app.after(0, lambda: _show_update_dialog(
                 app, remote_version, changelog, download_url, theme, text_color))
         elif not silent:

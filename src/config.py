@@ -24,8 +24,9 @@ REG_APP_NAME = "PizzaTools"
 DISCORD_RPC_CLIENT_ID = "1522551537661120593"
 
 APP_VERSION         = "1.0.0"
-GITHUB_VERSION_URL  = "https://raw.githubusercontent.com/pizzathegoat/Pizza_Tools/main/version.json"
-GITHUB_RELEASES_URL = "https://github.com/pizzathegoat/Pizza_Tools/releases/latest"
+GITHUB_LINK         = "https://github.com/pizzathegoat/PizzaTools"
+GITHUB_VERSION_URL  = "https://raw.githubusercontent.com/pizzathegoat/PizzaTools/main/version.json"
+GITHUB_RELEASES_URL = "https://github.com/pizzathegoat/PizzaTools/releases/latest"
 
 THEMES = {
     "Dark": {"bg": "#121212", "card": "#1e1e1e", "accent": "#333333", "btn": "#2b2b2b", "btn_hover": "#3b3b3b"},

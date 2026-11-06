@@ -564,7 +564,18 @@ class LuaUploader(TkinterDnD.Tk):
             height=32,
             command=self.manual_update_check,
         )
-        self.check_update_btn.pack(side="left")
+        self.check_update_btn.pack(side="left", padx=(0, 10))
+
+        self.github_btn = ctk.CTkButton(
+            update_row,
+            text="GitHub Repo",
+            font=(FONT, 12, "bold"),
+            width=130,
+            corner_radius=SMALL_CORNER,
+            height=32,
+            command=self.open_github,
+        )
+        self.github_btn.pack(side="left")
 
         self.steam_patch_label = ctk.CTkLabel(self.settings_categories['Steam'], text="BetterSteamTools Patch",
                                               font=(FONT, 13, "bold"))
@@ -1284,6 +1295,9 @@ class LuaUploader(TkinterDnD.Tk):
 
     def open_discord(self):
         webbrowser.open(config.DISCORD_LINK)
+
+    def open_github(self):
+        webbrowser.open(config.GITHUB_LINK)
 
     def _refresh_onlinefix_requirements(self):
         if self._onlinefix_requirements_checking:
