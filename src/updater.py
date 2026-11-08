@@ -6,6 +6,7 @@ import tempfile
 import zipfile
 import subprocess
 import urllib.request
+from urllib.error import URLError
 from tkinter import messagebox
 
 import customtkinter as ctk
@@ -22,17 +23,38 @@ def _parse_version(v: str) -> tuple:
         return (0,)
 
 
-def _fetch_remote_info(url: str, timeout: int = 6) -> dict | None:
-    try:
-        request = urllib.request.Request(url, headers={"User-Agent": "PizzaTools-Updater", "Accept": "application/vnd.github+json"})
-        with urllib.request.urlopen(request, timeout=timeout) as resp:
-            return json.loads(resp.read().decode())
-    except Exception:
+def _fetch_remote_info(url: str, timeout: int = 6) -> dict:
+    request = urllib.request.Request(url, headers={"User-Agent": "PizzaTools-Updater", "Accept": "application/vnd.github+json"})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        info = json.load(response)
+    if not isinstance(info, dict):
+        raise ValueError("GitHub returned invalid update information.")
+    return info
+
+
+def _fetch_backup_release():
+    repo = config.GITHUB_LINK.removeprefix("https://github.com/").rstrip("/")
+    url = f"https://raw.githubusercontent.com/{repo}/main/version.json"
+    info = _fetch_remote_info(url)
+    version = info.get("version", "")
+    download_url = info.get("download_url", "")
+    if _parse_version(version) <= _parse_version(config.APP_VERSION):
         return None
+    expected = f"{config.GITHUB_LINK.rstrip('/')}/releases/download/"
+    if not isinstance(download_url, str) or not download_url.startswith(expected) or not download_url.lower().endswith("/pizza_tools.zip"):
+        return None
+    return {
+        "tag_name": version,
+        "body": info.get("changelog", ""),
+        "assets": [{"name": "Pizza_Tools.zip", "browser_download_url": download_url}],
+    }
 
 
-def _download_file(url: str, dest_path: str, progress_cb=None):
-    with urllib.request.urlopen(url, timeout=30) as resp:
+def _stream_download(url, dest_path, progress_cb, accept):
+    request = urllib.request.Request(
+        url, headers={"User-Agent": "PizzaTools-Updater", "Accept": accept},
+    )
+    with urllib.request.urlopen(request, timeout=30) as resp:
         total = int(resp.headers.get("Content-Length", 0))
         done  = 0
         chunk = 1024 * 64
@@ -46,6 +68,22 @@ def _download_file(url: str, dest_path: str, progress_cb=None):
                 done += len(buf)
                 if progress_cb:
                     progress_cb(done, total)
+
+
+def _download_file(url, dest_path, progress_cb=None, *, api_url=None, retry_cb=None):
+    try:
+        _stream_download(url, dest_path, progress_cb, "*/*")
+        if zipfile.is_zipfile(dest_path):
+            return
+        raise ValueError("The release download is not a valid ZIP.")
+    except (URLError, TimeoutError, ValueError):
+        if not api_url:
+            raise
+    if retry_cb is not None:
+        retry_cb()
+    _stream_download(api_url, dest_path, progress_cb, "application/octet-stream")
+    if not zipfile.is_zipfile(dest_path):
+        raise ValueError("The GitHub API did not return a valid ZIP.")
 
 
 def _get_app_root() -> str:
@@ -166,11 +204,12 @@ except Exception:
 class UpdateDialog(ctk.CTkToplevel):
 
     def __init__(self, parent, remote_version: str, changelog: str,
-                 download_url: str, theme: dict, text_color: str):
+                 download_url: str, theme: dict, text_color: str, *, asset_api_url=None):
         super().__init__(parent)
 
         self._parent       = parent
         self._download_url = download_url
+        self._asset_api_url = asset_api_url
         self._theme        = theme
         self._text_color   = text_color
 
@@ -285,10 +324,10 @@ class UpdateDialog(ctk.CTkToplevel):
                 else:
                     self._after_status(f"{done / 1_048_576:.1f} MB downloaded...")
 
-            _download_file(self._download_url, zip_path, progress_cb=on_progress)
-
-            if not zipfile.is_zipfile(zip_path):
-                raise ValueError("Downloaded file is not a valid ZIP.")
+            _download_file(
+                self._download_url, zip_path, progress_cb=on_progress, api_url=self._asset_api_url,
+                retry_cb=lambda: self._after_status("Trying the GitHub API...", progress=0),
+            )
 
             self._after_status("Applying update & restarting...", progress=1.0)
 
@@ -315,15 +354,27 @@ class UpdateDialog(ctk.CTkToplevel):
 
 def check_for_update(app, theme: dict, text_color: str, silent: bool = True):
     def worker():
-        info = _fetch_remote_info(config.GITHUB_RELEASE_API_URL)
-        if not info:
-            if not silent:
-                app.after(0, lambda: _show_offline(app, theme, text_color))
-            return
+        try:
+            info = _fetch_remote_info(config.GITHUB_RELEASE_API_URL)
+        except (OSError, ValueError) as error:
+            detail = str(error)
+            try:
+                info = _fetch_backup_release()
+            except (OSError, ValueError):
+                info = None
+            if info is None:
+                if not silent:
+                    app.after(0, lambda: _show_offline(app, theme, text_color, detail))
+                return
 
         remote_version = info.get("tag_name", "")
         changelog      = info.get("body") or ""
-        download_url = next((asset.get("browser_download_url", "") for asset in info.get("assets", []) if asset.get("name", "").lower() == "pizza_tools.zip"), "")
+        asset = next(
+            (asset for asset in info.get("assets", []) if asset.get("name", "").lower() == "pizza_tools.zip"),
+            {},
+        )
+        download_url = asset.get("browser_download_url", "")
+        asset_api_url = asset.get("url")
 
         if info.get("draft") or info.get("prerelease"):
             return
@@ -339,16 +390,18 @@ def check_for_update(app, theme: dict, text_color: str, silent: bool = True):
                     app.after(0, lambda: messagebox.showerror("Update", "The latest release has no Pizza_Tools.zip attachment yet.", parent=app))
                 return
             app.after(0, lambda: _show_update_dialog(
-                app, remote_version, changelog, download_url, theme, text_color))
+                app, remote_version, changelog, download_url, theme, text_color, asset_api_url=asset_api_url))
         elif not silent:
             app.after(0, lambda: _show_up_to_date(app, theme, text_color))
 
     threading.Thread(target=worker, daemon=True).start()
 
 
-def _show_update_dialog(app, remote_version, changelog, download_url, theme, text_color):
+def _show_update_dialog(app, remote_version, changelog, download_url, theme, text_color, *, asset_api_url=None):
     try:
-        UpdateDialog(app, remote_version, changelog, download_url, theme, text_color).focus()
+        UpdateDialog(
+            app, remote_version, changelog, download_url, theme, text_color, asset_api_url=asset_api_url,
+        ).focus()
     except Exception:
         pass
 
@@ -384,7 +437,7 @@ def _show_up_to_date(app, theme, text_color):
         pass
 
 
-def _show_offline(app, theme, text_color):
+def _show_offline(app, theme, text_color, detail):
     try:
         t   = theme
         top = ctk.CTkToplevel(app)
@@ -398,8 +451,8 @@ def _show_offline(app, theme, text_color):
 
         ctk.CTkLabel(card, text="⚠️  No Connection",
                      font=(FONT, 13, "bold"), text_color=text_color).pack(padx=24, pady=(18, 4))
-        ctk.CTkLabel(card, text="Could not reach GitHub.",
-                     font=(FONT, 11), text_color=text_color).pack(padx=24, pady=(0, 10))
+        ctk.CTkLabel(card, text=f"Could not check the latest GitHub release.\n{detail}",
+                     font=(FONT, 11), text_color=text_color, wraplength=290).pack(padx=24, pady=(0, 10))
 
         ctk.CTkButton(card, text="OK", font=(FONT, 12, "bold"),
                       fg_color=t["btn"], hover_color=t["btn_hover"],
