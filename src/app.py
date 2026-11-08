@@ -385,7 +385,8 @@ class LuaUploader(TkinterDnD.Tk):
         self.onlinefix_progress.pack(fill="x", padx=16, pady=(0, 8))
         self.onlinefix_progress.set(0)
         self.onlinefix_log = ctk.CTkTextbox(
-            self.downloader_view, height=155, corner_radius=9, font=("Consolas", 9), wrap="word"
+            self.downloader_view, height=155, corner_radius=9, font=("Consolas", 13),
+            wrap="word", spacing2=2, spacing3=1,
         )
         self.onlinefix_log.pack(fill="both", expand=True, padx=14, pady=(0, 8))
         self.onlinefix_log.configure(state="disabled")
