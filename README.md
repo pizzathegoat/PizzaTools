@@ -15,7 +15,7 @@ Pizza Tools is a free and open-source graphical interface for BetterSteamTools. 
 3. Run **`RUN THIS BAT !.bat`** once to install the Python dependencies. Alternatively, run `python -m pip install -r requirements.txt` in the extracted folder.
 4. Double-click **`main.pyw`** to start Pizza Tools.
 5. Go to **Settings → Files → Save Folder** and check that the path points to the Lua folder used by BetterSteamTools. The default is `C:\Program Files (x86)\Steam\config\stplug-in`. Click **Browse** if your Lua folder is somewhere else.
-6. Close Steam, then choose **Settings → Steam → Apply Patch**. Review the destination in the confirmation dialog before continuing. The patch copies its files into the Steam installation.
+6. Close Steam, then choose **Settings → Steam → Apply Patch**. The patch copies its files into the Steam installation.
 
 Steam is required for Steam integration and manifest imports.
 
