@@ -17,8 +17,9 @@ Pizza Tools is a free and open-source graphical interface for BetterSteamTools. 
 5. Under **Settings → Files → Save Folder**, check that the path points to the Lua folder used by your BetterSteamTools setup. The default is `C:\Program Files (x86)\Steam\config\stplug-in`. Use **Browse** if Steam or your Lua folder is somewhere else.
 
 6.Steam is required for Steam integration and manifest imports. After that close Steam and choose **Settings → Steam → Apply Patch**. The confirmation shows the destination. The patch copies files into the Steam installation.
-## Import Lua files and manifests
 
+
+## Import Lua files and manifests
 Open **Home** and drop a file or archive onto the drop area. The status bar shows what Pizza Tools is doing and reports the result.
 
 | Drop this | What Pizza Tools does |
