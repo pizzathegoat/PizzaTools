@@ -1,5 +1,0 @@
-customtkinter
-tkinterdnd2
-pillow
-pystray
-pypresence
