@@ -94,6 +94,10 @@ class LuaUploader(TkinterDnD.Tk):
         self.reset_timer = None
         self.mini_reset_timer = None
         self.is_mini_mode = False
+        self._mini_overlay = None
+        self._mini_overlay_size = None
+        self._mini_overlay_job = None
+        self._mini_overlay_failed = False
         self.tray_icon = None
         self._mini_size = config.MINI_LOGO_SIZE[0]
         self.discord = DiscordRPC(config.DISCORD_RPC_CLIENT_ID)
@@ -641,6 +645,8 @@ class LuaUploader(TkinterDnD.Tk):
 
         self.mini_status.drop_target_register(DND_FILES)
         self.mini_status.dnd_bind('<<Drop>>', self.handle_drop)
+        for event in ("<Map>", "<Unmap>", "<Configure>"):
+            self.bind(event, self._queue_mini_overlay, add="+")
 
     def _apply_custom_theme_color(self):
         hex_color = self.custom_color_entry.get().strip()
@@ -707,13 +713,64 @@ class LuaUploader(TkinterDnD.Tk):
             pass
 
     def start_move(self, event):
-        self.x_click = event.x
-        self.y_click = event.y
+        self.x_click = event.x_root - self.winfo_x()
+        self.y_click = event.y_root - self.winfo_y()
 
     def do_move(self, event):
-        x = self.winfo_x() - self.x_click + event.x
-        y = self.winfo_y() - self.y_click + event.y
+        x = event.x_root - self.x_click
+        y = event.y_root - self.y_click
         self.geometry(f"+{x}+{y}")
+
+    def _queue_mini_overlay(self, event):
+        if event.widget is self and (self.is_mini_mode or self._mini_overlay is not None):
+            if self._mini_overlay_job is None:
+                self._mini_overlay_job = self.after_idle(self._sync_mini_overlay)
+
+    def _sync_mini_overlay(self):
+        self._mini_overlay_job = None
+        if not self.is_mini_mode or not self.winfo_viewable():
+            if self._mini_overlay is not None:
+                self._mini_overlay.destroy()
+                self._mini_overlay = None
+                self.mini_logo.place(relx=0.5, rely=0.4, anchor="center")
+            return
+
+        if self._mini_overlay_failed or not hasattr(self, "_mini_glow_base"):
+            return
+        size = max(1, round(config.MINI_LOGO_SIZE[0] * self.mini_logo._get_widget_scaling()))
+        x = self.mini_frame.winfo_rootx() + (self.mini_frame.winfo_width() - size) // 2
+        y = self.mini_frame.winfo_rooty() + round(self.mini_frame.winfo_height() * 0.4 - size / 2)
+        if self._mini_overlay is not None and self._mini_overlay_size == size:
+            windows_integration.move_layered_image(self._mini_overlay_hwnd, x, y)
+            return
+
+        try:
+            if self._mini_overlay is None:
+                window = self._mini_overlay = tk.Toplevel(self)
+                window.withdraw()
+                window.title("Pizza Tools Mini Logo")
+                window.overrideredirect(True)
+                window.transient(self)
+                window.attributes("-topmost", True)
+                window.geometry(f"{size}x{size}+-32000+-32000")
+                window.bind("<Double-Button-1>", self.toggle_mini_mode)
+                window.bind("<Button-3>", self.show_mini_context_menu)
+                window.bind("<ButtonPress-1>", self.start_move)
+                window.bind("<B1-Motion>", self.do_move)
+                window.drop_target_register(DND_FILES)
+                window.dnd_bind("<<Drop>>", self.handle_drop)
+                window.deiconify()
+                window.update_idletasks()
+            logo = image_utils.make_glow_logo(self._mini_glow_base, config.MINI_LOGO_SIZE, out_px=size)
+            self._mini_overlay_hwnd = windows_integration.draw_layered_image(self._mini_overlay, logo, x, y)
+            self._mini_overlay_size = size
+            self.mini_logo.place_forget()
+        except (OSError, tk.TclError):
+            if self._mini_overlay is not None:
+                self._mini_overlay.destroy()
+                self._mini_overlay = None
+            self._mini_overlay_failed = True
+            self.mini_logo.place(relx=0.5, rely=0.4, anchor="center")
 
     def show_mini_context_menu(self, event):
         self.close_context_menu()

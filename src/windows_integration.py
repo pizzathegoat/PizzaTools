@@ -2,11 +2,96 @@ import os
 import sys
 import winreg
 import ctypes
+from ctypes import wintypes
+
+from PIL import Image
 
 try:
     import pystray
 except ImportError:
     pystray = None
+
+
+class _BitmapInfo(ctypes.Structure):
+    _fields_ = [
+        ("size", wintypes.DWORD), ("width", wintypes.LONG), ("height", wintypes.LONG),
+        ("planes", wintypes.WORD), ("bits", wintypes.WORD),
+        ("compression", wintypes.DWORD), ("image_size", wintypes.DWORD),
+        ("x_pixels", wintypes.LONG), ("y_pixels", wintypes.LONG),
+        ("colors_used", wintypes.DWORD), ("colors_important", wintypes.DWORD),
+    ]
+
+
+def draw_layered_image(window, image, x, y):
+    user = ctypes.WinDLL("user32", use_last_error=True)
+    gdi = ctypes.WinDLL("gdi32", use_last_error=True)
+    user.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+    user.GetAncestor.restype = wintypes.HWND
+    hwnd = user.GetAncestor(window.winfo_id(), 2)
+    user.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+    user.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.LONG]
+    user.SetWindowLongW(hwnd, -20, user.GetWindowLongW(hwnd, -20) | 0x80000)
+
+    gdi.CreateCompatibleDC.argtypes = [wintypes.HDC]
+    gdi.CreateCompatibleDC.restype = wintypes.HDC
+    gdi.CreateDIBSection.argtypes = [
+        wintypes.HDC, ctypes.POINTER(_BitmapInfo), wintypes.UINT,
+        ctypes.POINTER(ctypes.c_void_p), wintypes.HANDLE, wintypes.DWORD,
+    ]
+    gdi.CreateDIBSection.restype = wintypes.HBITMAP
+    gdi.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
+    gdi.SelectObject.restype = wintypes.HGDIOBJ
+    gdi.DeleteObject.argtypes = [wintypes.HGDIOBJ]
+    gdi.DeleteDC.argtypes = [wintypes.HDC]
+    user.UpdateLayeredWindow.argtypes = [
+        wintypes.HWND, wintypes.HDC, ctypes.POINTER(wintypes.POINT),
+        ctypes.POINTER(wintypes.SIZE), wintypes.HDC, ctypes.POINTER(wintypes.POINT),
+        wintypes.COLORREF, ctypes.c_void_p, wintypes.DWORD,
+    ]
+
+    width, height = image.size
+    info = _BitmapInfo(ctypes.sizeof(_BitmapInfo), width, -height, 1, 32)
+    bits = ctypes.c_void_p()
+    dc = gdi.CreateCompatibleDC(None)
+    if not dc:
+        raise ctypes.WinError(ctypes.get_last_error())
+    bitmap = previous = None
+    try:
+        bitmap = gdi.CreateDIBSection(dc, ctypes.byref(info), 0, ctypes.byref(bits), None, 0)
+        if not bitmap:
+            raise ctypes.WinError(ctypes.get_last_error())
+        red, green, blue, alpha = image.convert("RGBa").split()
+        pixels = Image.merge("RGBA", (blue, green, red, alpha)).tobytes()
+        ctypes.memmove(bits, pixels, len(pixels))
+        previous = gdi.SelectObject(dc, bitmap)
+        if not previous:
+            raise ctypes.WinError(ctypes.get_last_error())
+        position = wintypes.POINT(x, y)
+        size = wintypes.SIZE(width, height)
+        origin = wintypes.POINT(0, 0)
+        blend = (ctypes.c_ubyte * 4)(0, 0, 255, 1)
+        if not user.UpdateLayeredWindow(
+            hwnd, None, ctypes.byref(position), ctypes.byref(size), dc,
+            ctypes.byref(origin), 0, blend, 2,
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+        move_layered_image(hwnd, x, y, show=True)
+        return hwnd
+    finally:
+        if previous:
+            gdi.SelectObject(dc, previous)
+        if bitmap:
+            gdi.DeleteObject(bitmap)
+        gdi.DeleteDC(dc)
+
+
+def move_layered_image(hwnd, x, y, *, show=False):
+    set_position = ctypes.windll.user32.SetWindowPos
+    set_position.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+                            ctypes.c_int, ctypes.c_int, wintypes.UINT]
+    no_resize_or_activation = 0x0001 | 0x0010
+    flags = no_resize_or_activation | (0x0040 if show else 0x0004)
+    set_position(hwnd, -1 if show else None, x, y, 0, 0, flags)
 
 
 def create_tray_icon(image, on_show, on_quit):

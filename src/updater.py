@@ -6,7 +6,7 @@ import tempfile
 import zipfile
 import subprocess
 import urllib.request
-from urllib.parse import urlparse
+from tkinter import messagebox
 
 import customtkinter as ctk
 
@@ -24,46 +24,11 @@ def _parse_version(v: str) -> tuple:
 
 def _fetch_remote_info(url: str, timeout: int = 6) -> dict | None:
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as resp:
+        request = urllib.request.Request(url, headers={"User-Agent": "PizzaTools-Updater", "Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
             return json.loads(resp.read().decode())
     except Exception:
         return None
-
-
-def _resolve_download_url(download_url: str, timeout: int = 10) -> str:
-    download_url = download_url.strip() if isinstance(download_url, str) else ""
-    if download_url and urlparse(download_url).path.lower().endswith(".zip"):
-        return download_url
-
-    repository = urlparse(config.GITHUB_LINK)
-    owner, _, name = repository.path.strip("/").partition("/")
-    if repository.netloc.lower() != "github.com" or not owner or not name:
-        return ""
-
-    api_url = f"https://api.github.com/repos/{owner}/{name}/releases/latest"
-    request = urllib.request.Request(
-        api_url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "PizzaTools-Updater",
-        },
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as resp:
-            release = json.loads(resp.read().decode("utf-8"))
-        assets = release.get("assets", [])
-        preferred = next(
-            (asset for asset in assets if asset.get("name", "").lower() == "pizza_tools.zip"),
-            None,
-        )
-        if preferred is None:
-            preferred = next(
-                (asset for asset in assets if asset.get("name", "").lower().endswith(".zip")),
-                None,
-            )
-        return preferred.get("browser_download_url", "") if preferred else ""
-    except Exception:
-        return ""
 
 
 def _download_file(url: str, dest_path: str, progress_cb=None):
@@ -94,49 +59,108 @@ def _apply_update_and_restart(zip_path: str, app_root: str):
     pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
     if not os.path.isfile(pythonw):
         pythonw = sys.executable
+    helper_path = os.path.join(os.path.dirname(zip_path), "install_update.py")
+    log_path = os.path.join(config.CONFIG_DIR, "update.log")
+    helper = r'''
+import ctypes
+from ctypes import wintypes
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import traceback
+import zipfile
 
-    main_pyw = os.path.join(app_root, "main.pyw")
-    bat_path = os.path.join(tempfile.gettempdir(), "pizza_tools_update.bat")
-    pid      = os.getpid()
-
-    bat_content = f"""@echo off
-chcp 65001 >nul
-title Pizza Tools Updater
-
-echo Waiting for Pizza Tools to close...
-:wait_loop
-tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul 2>&1
-if not errorlevel 1 (
-    timeout /t 1 /nobreak >nul
-    goto wait_loop
-)
-
-echo Applying update...
-powershell -NoProfile -Command ^
-    "Expand-Archive -Path '{zip_path}' -DestinationPath '{app_root}' -Force"
-
-if errorlevel 1 (
-    echo [ERROR] Failed to extract update.
-    pause
-    goto cleanup
-)
-
-echo Restarting Pizza Tools...
-start "" "{pythonw}" "{main_pyw}"
-
-:cleanup
-del "{zip_path}" >nul 2>&1
-del "%~f0" >nul 2>&1
-"""
-
-    with open(bat_path, "w", encoding="utf-8") as f:
-        f.write(bat_content)
-
-    subprocess.Popen(
-        ["cmd.exe", "/c", bat_path],
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS,
-        close_fds=True,
-    )
+archive, destination, parent_pid, pythonw = sys.argv[1:]
+root = Path(destination).resolve()
+try:
+    print("Waiting for Pizza Tools to close...", flush=True)
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel.OpenProcess(0x00100000, False, int(parent_pid))
+    if handle:
+        try:
+            if kernel.WaitForSingleObject(handle, 60000) != 0:
+                raise RuntimeError("Pizza Tools did not exit within 60 seconds.")
+        finally:
+            kernel.CloseHandle(handle)
+    elif ctypes.get_last_error() != 87:
+        raise ctypes.WinError(ctypes.get_last_error())
+    stage = Path(archive).parent / "staged"
+    stage.mkdir(exist_ok=True)
+    with zipfile.ZipFile(archive) as package:
+        for entry in package.infolist():
+            target = (stage / entry.filename).resolve()
+            if not target.is_relative_to(stage.resolve()):
+                raise ValueError("Invalid archive path.")
+        package.extractall(stage)
+    payloads = [
+        launcher.parent
+        for launcher in stage.rglob("main.pyw")
+        if (launcher.parent / "src" / "config.py").is_file()
+    ]
+    if stage in payloads:
+        payload = stage
+    else:
+        outer_payloads = [
+            folder for folder in payloads
+            if not any(other in folder.parents for other in payloads)
+        ]
+        if len(outer_payloads) != 1:
+            raise ValueError("The ZIP does not contain one valid Pizza Tools installation.")
+        payload = outer_payloads[0]
+    nested_payloads = {
+        folder for folder in payloads if payload in folder.parents
+    }
+    backup = Path(archive).parent / "backup"
+    changed = []
+    try:
+        for source in payload.rglob("*"):
+            if not source.is_file() or nested_payloads.intersection(source.parents):
+                continue
+            relative = source.relative_to(payload)
+            if {".git", ".idea", "__pycache__"}.intersection(relative.parts):
+                continue
+            target = root / relative
+            saved = backup / relative
+            existed = target.exists()
+            if existed:
+                saved.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(target, saved)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            changed.append((target, saved, existed))
+            shutil.copy2(source, target)
+        subprocess.Popen([pythonw, str(root / "main.pyw")], cwd=str(root), close_fds=True)
+    except Exception:
+        for target, saved, existed in reversed(changed):
+            if existed:
+                shutil.copy2(saved, target)
+            else:
+                target.unlink(missing_ok=True)
+        raise
+    print("Update installed and restart launched.", flush=True)
+except Exception:
+    traceback.print_exc()
+    sys.stderr.flush()
+    ctypes.windll.user32.MessageBoxW(None, r"Update failed. Details are in %APPDATA%\PizzaTools\update.log", "Pizza Tools Update", 16)
+    sys.exit(1)
+'''
+    with open(helper_path, "w", encoding="utf-8") as stream:
+        stream.write(helper)
+    with open(log_path, "w", encoding="utf-8") as log:
+        subprocess.Popen(
+            [pythonw, helper_path, zip_path, app_root, str(os.getpid()), pythonw],
+            cwd=app_root,
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=log,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            close_fds=True,
+        )
 
 
 class UpdateDialog(ctk.CTkToplevel):
@@ -291,21 +315,29 @@ class UpdateDialog(ctk.CTkToplevel):
 
 def check_for_update(app, theme: dict, text_color: str, silent: bool = True):
     def worker():
-        info = _fetch_remote_info(config.GITHUB_VERSION_URL)
+        info = _fetch_remote_info(config.GITHUB_RELEASE_API_URL)
         if not info:
             if not silent:
                 app.after(0, lambda: _show_offline(app, theme, text_color))
             return
 
-        remote_version = info.get("version", "")
-        changelog      = info.get("changelog", "")
-        download_url   = info.get("download_url", "")
+        remote_version = info.get("tag_name", "")
+        changelog      = info.get("body") or ""
+        download_url = next((asset.get("browser_download_url", "") for asset in info.get("assets", []) if asset.get("name", "").lower() == "pizza_tools.zip"), "")
 
-        if not remote_version:
+        if info.get("draft") or info.get("prerelease"):
+            return
+
+        if _parse_version(remote_version) == (0,):
+            if not silent:
+                app.after(0, lambda: messagebox.showerror("Update", "The latest release needs a numeric version tag, such as v1.0.2.", parent=app))
             return
 
         if _parse_version(remote_version) > _parse_version(config.APP_VERSION):
-            download_url = _resolve_download_url(download_url)
+            if not download_url:
+                if not silent:
+                    app.after(0, lambda: messagebox.showerror("Update", "The latest release has no Pizza_Tools.zip attachment yet.", parent=app))
+                return
             app.after(0, lambda: _show_update_dialog(
                 app, remote_version, changelog, download_url, theme, text_color))
         elif not silent:

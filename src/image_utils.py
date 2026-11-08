@@ -49,18 +49,7 @@ def make_glow_logo(img, target_size, glow_color=None, intensity=1.0, out_px=None
     side = out_px * supersample
     mask = Image.new("L", (side, side), 0)
     ImageDraw.Draw(mask).ellipse((0, 0, side - 1, side - 1), fill=255)
-    mask = mask.resize((out_px, out_px), Image.LANCZOS)
+    mask = mask.resize((out_px, out_px), Image.Resampling.BOX)
     resized = img.convert("RGB").resize((out_px, out_px), Image.LANCZOS).convert("RGBA")
-    resized.putalpha(mask)
-    stroke = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-    stroke_width = max(supersample, round(side * 0.018))
-    inset = round(stroke_width / 2)
-    ImageDraw.Draw(stroke).ellipse(
-        (inset, inset, side - 1 - inset, side - 1 - inset),
-        outline=(76, 91, 117, 255),
-        width=stroke_width,
-    )
-    stroke = stroke.resize((out_px, out_px), Image.LANCZOS)
-    resized.alpha_composite(stroke)
     resized.putalpha(mask)
     return resized
