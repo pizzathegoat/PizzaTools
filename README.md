@@ -65,9 +65,17 @@ Enter a game name and click **Download**. Follow the progress in the log and cli
 
 Double-click the Pizza Tools logo to switch to the floating mini window. You can move it, drop supported files onto it, or double-click it again to return to the full app. Right-click it for the menu, including **Run in Background**, which sends Pizza Tools to the system tray.
 
-Under **Settings → App**, you can enable Windows startup, create a desktop shortcut, or turn on Discord Rich Presence. Under **Settings → Steam**, you can open or restart Steam and close it before applying the BetterSteamTools patch.
+Under **Settings → App**, you can enable Windows startup or turn on Discord Rich Presence. Under **Settings → Steam**, you can open or restart Steam and close it before applying the BetterSteamTools patch.
 
 ![Floating mini logo with its context menu open](docs/images/mini-mode.png)
+
+## Launch from the desktop or Windows Search
+
+1. In Pizza Tools, go to **Settings → App → Desktop Shortcut** and click **Create Desktop Shortcut**.
+2. Double-click **Pizza Tools** on your desktop to launch the app.
+3. Once Windows indexes the shortcut, open **Start**, type **Pizza Tools**, and select the result to launch it from Windows Search. If it doesn't appear yet, use the desktop shortcut.
+
+If you move the extracted Pizza Tools folder, create the shortcut again from the new location.
 
 ## Updates
 
