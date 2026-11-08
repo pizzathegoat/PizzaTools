@@ -59,7 +59,7 @@ python -m playwright install chromium
 
 Enter a game name and click **Download**. Follow the progress in the log and click **Open Downloads** to find the downloaded archive. To apply a supported fix to an installed game, drop the archive or extracted fix folder onto **Home**.
 
-![Fixes tab showing browser requirements and download progress](docs/images/fixes.png)
+![Fixes tab showing browser requirements and download progress](docs/images/fixes-tab.png)
 
 ## Mini mode and app settings
 
