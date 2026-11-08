@@ -1,5 +1,5 @@
 {
     "version": "1.0.4",
-    "changelog": "- Larger, more readable download log\n- Improved update checks and download fallback",
+    "changelog": " Improved update checks and download fallback",
     "download_url": "https://github.com/pizzathegoat/PizzaTools/releases/download/v1.0.4/Pizza_Tools.zip"
 }
